@@ -150,7 +150,7 @@ class PrintService {
     bytes += generator.text('SECURE HANDOVER QR', styles: const PosStyles(align: PosAlign.center, bold: true));
     bytes += generator.qrcode(data['airway_id'], size: QRSize.size4);
     bytes += generator.feed(1);
-    bytes += generator.text('Scan to update status', styles: const PosStyles(align: PosAlign.center, fontSize: PosFontSize.size8));
+    bytes += generator.text('Scan to update status', styles: const PosStyles(align: PosAlign.center));
     
     bytes += generator.hr();
     if (data['reference'] != null && data['reference'].toString().isNotEmpty) {
