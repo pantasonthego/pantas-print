@@ -127,9 +127,15 @@ class _AirwayBillScreenState extends State<AirwayBillScreen> {
       'created_at': DateTime.now().toIso8601String(),
     };
 
-    await _storage.saveAirwayBill(awbData);
-    _logger.log("Airway Bill created: $airwayId");
-
+    // Note: We don't save to Airway store here yet, only show preview.
+    // The actual transaction will be created AFTER handover in Transactions menu.
+    // But we save to History so the user can see it in History & Queue.
+    await _storage.saveHistory({
+      ...awbData,
+      'id': airwayId,
+    });
+    
+    _logger.log("Airway Bill generated for preview: $airwayId");
     _showPrintPreview(awbData);
   }
 
@@ -151,20 +157,75 @@ class _AirwayBillScreenState extends State<AirwayBillScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Print Preview', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Paper Size:', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              Text(_currentPaperSize, style: const TextStyle(fontWeight: FontWeight.bold)),
-              const Divider(),
-              _previewRow('AWB ID', data['airway_id']),
-              _previewRow('From', data['sender_name']),
-              _previewRow('To', data['recipient']['name']),
-              _previewRow('Address', data['recipient']['address']),
-            ],
+        contentPadding: EdgeInsets.zero,
+        content: Container(
+          width: double.maxFinite,
+          decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade300)),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  color: Colors.grey.shade100,
+                  child: const Center(child: Text('PRINT PREVIEW (A6)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('PANTAS PRINT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                          Text(DateFormat('dd/MM/yy').format(DateTime.parse(data['created_at'])), style: const TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                      const Text('AIRWAY BILL', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Divider(thickness: 2, color: Colors.black),
+                      
+                      const Text('FROM:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      Text(data['sender_name'].toString().toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      
+                      const Text('TO:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      Text(data['recipient']['name'].toString().toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text('Tel: ${data['recipient']['phone']}', style: const TextStyle(fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 4),
+                      const Text('Address:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      Text(data['recipient']['address'].toString().toUpperCase(), style: const TextStyle(fontSize: 12)),
+                      
+                      const Divider(thickness: 1, color: Colors.black),
+                      Center(
+                        child: Column(
+                          children: [
+                            const Text('SECURE HANDOVER QR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              color: Colors.white,
+                              child: Image.network(
+                                'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${data['airway_id']}',
+                                height: 120,
+                                width: 120,
+                                errorBuilder: (c, e, s) => const Icon(Icons.qr_code, size: 100),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(data['airway_id'], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                          ],
+                        ),
+                      ),
+                      const Divider(thickness: 1, color: Colors.black),
+                      if (data['reference'].toString().isNotEmpty)
+                        Text('REF: ${data['reference']}', style: const TextStyle(fontSize: 10)),
+                      const Center(child: Text('--- PANTAS PRINT WATERMARK ---', style: TextStyle(fontSize: 8, color: Colors.grey))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -198,27 +259,14 @@ class _AirwayBillScreenState extends State<AirwayBillScreen> {
   void _executePrint(Map<String, dynamic> data) async {
     final btProvider = Provider.of<BluetoothProvider>(context, listen: false);
     if (!btProvider.isConnected) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Printer not connected. Saved to queue.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Printer not connected. Saved to History & Queue.')));
       return;
     }
 
     final printService = Provider.of<PrintService>(context, listen: false);
-    _logger.log("Generating ESC/POS commands for AWB: ${data['airway_id']}");
+    _logger.log("Generating AWB ticket for: ${data['airway_id']}");
     
-    final ticket = await printService.generateTextTicket(
-      "--------------------------------\n"
-      "      AIRWAY BILL (A6)          \n"
-      "      PANTAS PRINT              \n"
-      "--------------------------------\n"
-      "ID: ${data['airway_id']}\n"
-      "FROM: ${data['sender_name']}\n"
-      "TO: ${data['recipient']['name']}\n"
-      "ADDR: ${data['recipient']['address']}\n"
-      "REF: ${data['reference']}\n"
-      "--------------------------------\n"
-      "   [ SCAN FOR HANDOVER ]        \n"
-      "--------------------------------\n"
-    );
+    final ticket = await printService.generateAwbTicket(data);
 
     btProvider.connection?.output.add(Uint8List.fromList(ticket));
     await btProvider.connection?.output.allSent;
