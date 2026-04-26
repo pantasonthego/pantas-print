@@ -1,3 +1,9 @@
+buildscript {
+    ext {
+        compileSdkVersion = 34
+    }
+}
+
 allprojects {
     repositories {
         google()
@@ -11,20 +17,6 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
-}
-
-// Force all plugins to use compileSdk 33 to fix lStar not found error
-// caused by flutter_bluetooth_serial using old AGP with SDK 34
-subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
-            project.android {
-                if (compileSdkVersion < 33) {
-                    compileSdkVersion 33
-                }
-            }
-        }
-    }
 }
 
 tasks.register("clean", Delete) {
