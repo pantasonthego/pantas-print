@@ -181,16 +181,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     final printService = Provider.of<PrintService>(context, listen: false);
-    _logger.log("Reprinting AWB: ${item['airway_id']}");
+    final isAWB = item['type'] == 'secure_handover';
+    _logger.log("Reprinting ${isAWB ? 'AWB' : 'Item'}: ${item['id'] ?? item['airway_id']}");
     
-    final ticket = await printService.generateTextTicket(
-      "--------------------------------\n"
-      "      REPRINT AIRWAY BILL       \n"
-      "--------------------------------\n"
-      "ID: ${item['airway_id']}\n"
-      "TO: ${item['recipient']?['name']}\n"
-      "--------------------------------\n"
-    );
+    List<int> ticket;
+    if (isAWB) {
+      ticket = await printService.generateAwbTicket(item);
+    } else if (item['type'] == 'text_print') {
+      ticket = await printService.generateTextTicket(item['content'] ?? '', saveHistory: false);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reprint not supported for this type yet.')));
+      return;
+    }
 
     btProvider.connection?.output.add(Uint8List.fromList(ticket));
     await btProvider.connection?.output.allSent;

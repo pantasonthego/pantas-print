@@ -159,7 +159,25 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
 
     if (result != null) {
-      await _storage.updateAwbStatus(airwayId, key, value);
+      // If it's the first handover, we need to ensure the AWB exists in transactions
+      // In a real app, 'result' would be the scanned QR code content (the AWB ID)
+      if (key == 'sender_status' && value == 'Submitted') {
+        final allHistory = await _storage.getHistory(DateTime.now());
+        final awbFromHistory = allHistory.firstWhere((h) => h['airway_id'] == airwayId, orElse: () => {});
+        
+        if (awbFromHistory.isNotEmpty) {
+          await _storage.saveAirwayBill({
+            ...awbFromHistory,
+            'sender_status': 'Submitted',
+            'status': 'in_transit',
+          });
+        } else {
+          await _storage.updateAwbStatus(airwayId, key, value);
+        }
+      } else {
+        await _storage.updateAwbStatus(airwayId, key, value);
+      }
+      
       _logger.log("Transaction $airwayId updated: $key -> $value");
       _loadTransactions();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Status updated to $value')));

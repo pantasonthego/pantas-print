@@ -41,8 +41,8 @@ class PrintService {
     bytes += generator.cut();
 
     if (saveHistory) {
-      await _storage.saveAirwayBill({
-        'airway_id': 'TXT_${DateTime.now().millisecondsSinceEpoch}',
+      await _storage.saveHistory({
+        'id': 'TXT_${DateTime.now().millisecondsSinceEpoch}',
         'type': 'text_print',
         'content': text,
         'created_at': DateTime.now().toIso8601String(),
@@ -75,8 +75,8 @@ class PrintService {
     bytes += generator.cut();
 
     if (saveHistory) {
-      await _storage.saveAirwayBill({
-        'airway_id': 'IMG_${DateTime.now().millisecondsSinceEpoch}',
+      await _storage.saveHistory({
+        'id': 'IMG_${DateTime.now().millisecondsSinceEpoch}',
         'type': 'image_print',
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -106,8 +106,8 @@ class PrintService {
     await document.close();
 
     if (saveHistory) {
-      await _storage.saveAirwayBill({
-        'airway_id': 'PDF_${DateTime.now().millisecondsSinceEpoch}',
+      await _storage.saveHistory({
+        'id': 'PDF_${DateTime.now().millisecondsSinceEpoch}',
         'type': 'pdf_print',
         'file_name': filePath.split('/').last,
         'created_at': DateTime.now().toIso8601String(),
@@ -115,5 +115,58 @@ class PrintService {
     }
 
     return allBytes;
+  }
+
+  Future<List<int>> generateAwbTicket(Map<String, dynamic> data) async {
+    final profile = await CapabilityProfile.load();
+    final paperSize = await _getPaperSizeEnum();
+    final generator = Generator(paperSize, profile);
+    List<int> bytes = [];
+
+    // Header
+    bytes += generator.text('PANTAS PRINT', styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2, width: PosTextSize.size2));
+    bytes += generator.text('AIRWAY BILL', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.feed(1);
+    
+    // AWB ID & Date
+    bytes += generator.text('ID: ${data['airway_id']}', styles: const PosStyles(bold: true));
+    bytes += generator.text('Date: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.parse(data['created_at']))}');
+    bytes += generator.hr();
+
+    // Sender Info
+    bytes += generator.text('FROM (SENDER):', styles: const PosStyles(bold: true));
+    bytes += generator.text(data['sender_name'].toString().toUpperCase());
+    bytes += generator.feed(1);
+
+    // Recipient Info
+    bytes += generator.text('TO (RECIPIENT):', styles: const PosStyles(bold: true));
+    bytes += generator.text(data['recipient']['name'].toString().toUpperCase(), styles: const PosStyles(bold: true));
+    bytes += generator.text('Tel: ${data['recipient']['phone']}');
+    bytes += generator.text('Address:', styles: const PosStyles(bold: true));
+    bytes += generator.text(data['recipient']['address'].toString().toUpperCase());
+    bytes += generator.hr();
+
+    // QR Code for Handover
+    bytes += generator.text('SECURE HANDOVER QR', styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.qrcode(data['airway_id'], size: QRSize.size4);
+    bytes += generator.feed(1);
+    bytes += generator.text('Scan to update status', styles: const PosStyles(align: PosAlign.center, fontSize: PosFontSize.size8));
+    
+    bytes += generator.hr();
+    if (data['reference'] != null && data['reference'].toString().isNotEmpty) {
+      bytes += generator.text('REF: ${data['reference']}');
+    }
+    bytes += generator.text('--- Watermark: PANTAS PRINT ---', styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(2);
+    bytes += generator.cut();
+
+    // Save to History
+    await _storage.saveHistory({
+      ...data,
+      'id': data['airway_id'],
+      'type': 'secure_handover',
+    });
+
+    return bytes;
   }
 }
